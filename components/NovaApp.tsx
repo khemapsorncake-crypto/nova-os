@@ -8,7 +8,7 @@ type Product = { id:string; name:string; brand:string|null; category:string; pri
 type Content = { id:string; title:string; character:string; platform:string; status:string; hook:string|null; script:string|null; caption:string|null; storyboard:unknown; image_prompt:string|null; video_prompt:string|null; views:number; clicks:number; revenue:number; created_at:string; };
 type CampaignItem = { title:string; hook:string; script:string; caption:string; hashtags:string[]; storyboard:Array<{scene:number;visual:string;voiceover:string}>; image_prompt:string; video_prompt:string; };
 
-const VERSION = "v3.1 REAL";
+const VERSION = "v4.0 CONTENT FACTORY";
 const statuses = ["Idea","Script","Production","Ready","Posted"];
 const money = (value:number|string|null|undefined) => `฿${Number(value || 0).toLocaleString("th-TH")}`;
 const creatorByCategory = (category:string) => category === "Beauty" ? "LUNA" : category === "Office" ? "MAYA" : category === "Tech" ? "ETHAN" : "ARIA";
@@ -73,7 +73,7 @@ export default function NovaApp(){
       {loading?<div className="panel empty">กำลังโหลดข้อมูล...</div>:<>
         {page==="dashboard"&&<Dashboard products={products} contents={contents} revenue={revenue} views={views} clicks={clicks}/>} 
         {page==="products"&&<Products products={products} open={()=>setProductModal(true)}/>} 
-        {page==="content"&&<ContentBoard contents={contents} move={moveContent}/>} 
+        {page==="content"&&<ContentBoard contents={contents} move={moveContent} refresh={loadData}/>} 
         {page==="studio"&&<CampaignStudio products={products} refresh={loadData}/>} 
         {page==="analytics"&&<Analytics contents={contents} revenue={revenue} views={views} clicks={clicks}/>} 
       </>}
@@ -96,7 +96,33 @@ function Dashboard({products,contents,revenue,views,clicks}:{products:Product[];
 
 function Products({products,open}:{products:Product[];open:()=>void}){return <div className="panel"><div className="panelTop"><div><h2>Product Center</h2><p>สินค้าทั้งหมดใน Supabase</p></div><button className="primary" onClick={open}>+ เพิ่มสินค้า</button></div><div className="tableWrap"><table><thead><tr><th>สินค้า</th><th>หมวด</th><th>ราคา</th><th>คอมมิชชั่น</th><th>สถานะ</th></tr></thead><tbody>{products.map(p=><tr key={p.id}><td><b>{p.name}</b><small>{p.brand||"—"}</small></td><td>{p.category}</td><td>{money(p.price)}</td><td>{money(p.commission)}</td><td><span className="pill">{p.status}</span></td></tr>)}</tbody></table></div>{!products.length&&<Empty/>}</div>}
 
-function ContentBoard({contents,move}:{contents:Content[];move:(id:string,status:string)=>void}){return <div className="kanban">{statuses.map(s=><div className="column" key={s}><h3>{s}<span>{contents.filter(c=>c.status===s).length}</span></h3>{contents.filter(c=>c.status===s).map(c=><div className="card" key={c.id}><b>{c.title}</b><small>{c.character} · {c.platform}</small><select value={c.status} onChange={e=>move(c.id,e.target.value)}>{statuses.map(x=><option key={x}>{x}</option>)}</select></div>)}</div>)}</div>}
+function ContentBoard({contents,move,refresh}:{contents:Content[];move:(id:string,status:string)=>void;refresh:()=>void}){
+  const [selected,setSelected]=useState<Content|null>(null);
+  const [query,setQuery]=useState("");
+  const [creator,setCreator]=useState("All");
+  const filtered=contents.filter(c=>(!query||`${c.title} ${c.hook||""}`.toLowerCase().includes(query.toLowerCase()))&&(creator==="All"||c.character===creator));
+  return <>
+    <div className="factoryToolbar"><div><h2>Content Factory</h2><p>เปิด แก้ไข คัดลอก Prompt และจัดสถานะงานจากหน้าเดียว</p></div><div className="factoryFilters"><input placeholder="ค้นหาชื่อคลิปหรือ Hook" value={query} onChange={e=>setQuery(e.target.value)}/><select value={creator} onChange={e=>setCreator(e.target.value)}><option>All</option><option>LUNA</option><option>MAYA</option><option>ETHAN</option><option>ARIA</option></select></div></div>
+    <div className="kanban">{statuses.map(s=><div className="column" key={s}><h3>{s}<span>{filtered.filter(c=>c.status===s).length}</span></h3>{filtered.filter(c=>c.status===s).map(c=><div className="card contentFactoryCard" key={c.id} onClick={()=>setSelected(c)}><div className="cardStatus">{c.character}</div><b>{c.title}</b><small>{c.platform}</small>{c.hook&&<p>{c.hook}</p>}<select value={c.status} onClick={e=>e.stopPropagation()} onChange={e=>move(c.id,e.target.value)}>{statuses.map(x=><option key={x}>{x}</option>)}</select></div>)}</div>)}</div>
+    {selected&&<ContentEditor content={selected} close={()=>setSelected(null)} refresh={()=>{setSelected(null);refresh();}}/>}
+  </>;
+}
+
+function ContentEditor({content,close,refresh}:{content:Content;close:()=>void;refresh:()=>void}){
+  const [draft,setDraft]=useState(content);
+  const [saving,setSaving]=useState(false);
+  const scenes=Array.isArray(draft.storyboard)?draft.storyboard as Array<{scene?:number;visual?:string;voiceover?:string}>:[];
+  const set=(key:keyof Content,value:unknown)=>setDraft(d=>({...d,[key]:value}));
+  async function save(){if(!supabase)return;setSaving(true);const {error}=await supabase.from("contents").update({title:draft.title,hook:draft.hook,script:draft.script,caption:draft.caption,image_prompt:draft.image_prompt,video_prompt:draft.video_prompt,status:draft.status}).eq("id",draft.id);setSaving(false);if(error)alert(error.message);else refresh();}
+  async function remove(){if(!supabase||!confirm("ลบคอนเทนต์นี้ถาวรหรือไม่?"))return;const {error}=await supabase.from("contents").delete().eq("id",draft.id);if(error)alert(error.message);else refresh();}
+  async function copy(value:string|null,label:string){if(!value)return alert(`ยังไม่มี ${label}`);await navigator.clipboard.writeText(value);alert(`คัดลอก ${label} แล้ว`);}
+  return <div className="backdrop" onMouseDown={close}><div className="contentEditor" onMouseDown={e=>e.stopPropagation()}>
+    <div className="editorHead"><div><span className="badge">{draft.character} · {draft.platform}</span><h2>{draft.title}</h2></div><button className="closeButton" onClick={close}>×</button></div>
+    <div className="editorGrid"><section className="editorMain form"><label>ชื่อคลิป<input value={draft.title} onChange={e=>set("title",e.target.value)}/></label><label>Hook<textarea rows={3} value={draft.hook||""} onChange={e=>set("hook",e.target.value)}/></label><label>Script<textarea rows={12} value={draft.script||""} onChange={e=>set("script",e.target.value)}/></label><label>Caption + Hashtags<textarea rows={5} value={draft.caption||""} onChange={e=>set("caption",e.target.value)}/></label></section>
+    <aside className="editorSide"><div className="editorBlock"><h3>Workflow</h3><select value={draft.status} onChange={e=>set("status",e.target.value)}>{statuses.map(x=><option key={x}>{x}</option>)}</select></div><div className="editorBlock"><h3>Storyboard</h3>{scenes.length?scenes.map((x,i)=><div className="scene" key={i}><b>Scene {x.scene||i+1}</b><p>{x.visual||"—"}</p><small>{x.voiceover||""}</small></div>):<p className="muted">ยังไม่มี Storyboard</p>}</div><div className="editorBlock"><h3>Image Prompt</h3><textarea rows={6} value={draft.image_prompt||""} onChange={e=>set("image_prompt",e.target.value)}/><button className="secondary fullButton" onClick={()=>copy(draft.image_prompt,"Image Prompt")}>คัดลอก Image Prompt</button></div><div className="editorBlock"><h3>Video Prompt</h3><textarea rows={7} value={draft.video_prompt||""} onChange={e=>set("video_prompt",e.target.value)}/><button className="secondary fullButton" onClick={()=>copy(draft.video_prompt,"Video Prompt")}>คัดลอก Video Prompt</button></div></aside></div>
+    <div className="editorActions"><button className="dangerButton" onClick={remove}>ลบคอนเทนต์</button><div><button className="secondary" onClick={()=>copy(`${draft.hook||""}\n\n${draft.script||""}\n\n${draft.caption||""}`,"ชุดข้อความ")}>คัดลอกทั้งหมด</button><button className="primary" onClick={save} disabled={saving}>{saving?"กำลังบันทึก...":"บันทึกการแก้ไข"}</button></div></div>
+  </div></div>;
+}
 
 function CampaignStudio({products,refresh}:{products:Product[];refresh:()=>void}){
   const [productId,setProductId]=useState("");
