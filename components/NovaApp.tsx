@@ -3,14 +3,14 @@
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { hasSupabaseConfig, supabase } from "@/lib/supabase";
 
-type Page = "dashboard" | "products" | "campaigns" | "content" | "assets" | "studio" | "analytics";
+type Page = "dashboard" | "products" | "campaigns" | "content" | "assets" | "publishing" | "creative" | "analytics";
 type Product = { id:string; name:string; brand:string|null; category:string; price:number; commission:number; affiliate_link:string|null; status:string; revenue:number; created_at:string; };
 type Campaign = { id:string; name:string; product_id:string|null; platform:string; target_audience:string|null; tone:string|null; status:string; total_clips:number; created_at:string; };
 type Asset = { id:string; content_id:string; campaign_id:string|null; asset_type:"image"|"video"|"thumbnail"; file_name:string; file_path:string; public_url:string; mime_type:string|null; file_size:number; created_at:string; };
-type Content = { id:string; campaign_id:string|null; title:string; character:string; platform:string; status:string; hook:string|null; script:string|null; caption:string|null; storyboard:unknown; image_prompt:string|null; video_prompt:string|null; views:number; clicks:number; revenue:number; created_at:string; };
+type Content = { id:string; campaign_id:string|null; title:string; character:string; platform:string; status:string; hook:string|null; script:string|null; caption:string|null; storyboard:unknown; image_prompt:string|null; video_prompt:string|null; scheduled_at:string|null; published_at:string|null; publish_url:string|null; publish_status:string; views:number; clicks:number; revenue:number; created_at:string; };
 type CampaignItem = { title:string; hook:string; script:string; caption:string; hashtags:string[]; storyboard:Array<{scene:number;visual:string;voiceover:string}>; image_prompt:string; video_prompt:string; };
 
-const VERSION = "v6.0 ASSET LIBRARY";
+const VERSION = "v8.0 CREATIVE ENGINE ULTIMATE";
 const statuses = ["Idea","Script","Production","Ready","Posted"];
 const money = (value:number|string|null|undefined) => `฿${Number(value || 0).toLocaleString("th-TH")}`;
 const creatorByCategory = (category:string) => category === "Beauty" ? "LUNA" : category === "Office" ? "MAYA" : category === "Tech" ? "ETHAN" : "ARIA";
@@ -70,12 +70,12 @@ export default function NovaApp(){
       <div className="brand"><span>✦</span><div><b>NOVA OS</b><small>Free Campaign Studio</small></div></div>
       <div className="version">{VERSION}</div>
       <nav>{[
-        ["dashboard","⌂","Dashboard"],["products","▣","Products"],["campaigns","◆","Campaigns"],["content","▶","Content"],["assets","▧","Assets"],["studio","✦","Campaign Studio"],["analytics","▥","Analytics"]
+        ["dashboard","⌂","Dashboard"],["products","▣","Products"],["campaigns","◆","Campaigns"],["content","▶","Content"],["assets","▧","Assets"],["publishing","◫","Publishing"],["creative","✦","Creative Engine"],["analytics","▥","Analytics"]
       ].map(([id,icon,label])=><button key={id} className={page===id?"active":""} onClick={()=>setPage(id as Page)}><span>{icon}</span>{label}</button>)}</nav>
       <div className={`connection ${hasSupabaseConfig?"online":"offline"}`}>● {hasSupabaseConfig?"Supabase connected":"Environment missing"}</div>
     </aside>
     <main>
-      <header><div><h1>{page==="studio"?"Free Campaign Studio":page[0].toUpperCase()+page.slice(1)}</h1><p>สร้างแคมเปญด้วย ChatGPT โดยไม่เสียค่า API เพิ่ม</p></div><button className="secondary" onClick={loadData}>↻ Refresh</button></header>
+      <header><div><h1>{page==="creative"?"NOVA Creative Engine":page[0].toUpperCase()+page.slice(1)}</h1><p>คิดแคมเปญ สคริปต์ Storyboard และ Production Prompt ในคลิกเดียว</p></div><button className="secondary" onClick={loadData}>↻ Refresh</button></header>
       {!hasSupabaseConfig&&<div className="warning">ยังไม่ได้ตั้งค่า NEXT_PUBLIC_SUPABASE_URL และ NEXT_PUBLIC_SUPABASE_ANON_KEY</div>}
       {notice&&<div className="notice" onClick={()=>setNotice("")}>{notice} ×</div>}
       {loading?<div className="panel empty">กำลังโหลดข้อมูล...</div>:<>
@@ -84,7 +84,8 @@ export default function NovaApp(){
         {page==="campaigns"&&<CampaignHub campaigns={campaigns} contents={contents} assets={assets} products={products} refresh={loadData}/>} 
         {page==="content"&&<ContentBoard contents={contents} assets={assets} move={moveContent} refresh={loadData}/>} 
         {page==="assets"&&<AssetLibrary assets={assets} contents={contents} campaigns={campaigns} refresh={loadData}/>} 
-        {page==="studio"&&<CampaignStudio products={products} refresh={loadData}/>} 
+        {page==="publishing"&&<PublishingCalendar contents={contents} campaigns={campaigns} assets={assets} refresh={loadData}/>} 
+        {page==="creative"&&<CreativeEngine products={products} refresh={loadData}/>} 
         {page==="analytics"&&<Analytics contents={contents} revenue={revenue} views={views} clicks={clicks}/>} 
       </>}
     </main>
@@ -227,92 +228,113 @@ function AssetLibrary({assets,contents,campaigns,refresh}:{assets:Asset[];conten
   </>;
 }
 
-function formatFileSize(bytes:number){if(!bytes)return "0 B";const units=["B","KB","MB","GB"];const i=Math.min(Math.floor(Math.log(bytes)/Math.log(1024)),units.length-1);return `${(bytes/Math.pow(1024,i)).toFixed(i?1:0)} ${units[i]}`;}
-
-function CampaignStudio({products,refresh}:{products:Product[];refresh:()=>void}){
-  const [productId,setProductId]=useState("");
-  const [target,setTarget]=useState("ผู้หญิงวัยทำงาน อายุ 22–35 ปี ที่ต้องการข้อมูลก่อนตัดสินใจซื้อ");
-  const [tone,setTone]=useState("จริงใจ เป็นธรรมชาติ ไม่ขายเกินจริง");
-  const [platform,setPlatform]=useState("TikTok");
-  const [count,setCount]=useState(5);
-  const [prompt,setPrompt]=useState("");
-  const [jsonText,setJsonText]=useState("");
-  const [preview,setPreview]=useState<CampaignItem[]>([]);
-  const [message,setMessage]=useState("");
-  const product=products.find(p=>p.id===productId);
-
-  function buildPrompt(){
-    if(!product){setMessage("กรุณาเลือกสินค้าก่อน");return;}
-    const value=`คุณเป็นทีมสร้างคอนเทนต์ Affiliate ภาษาไทยของ NOVA OS
-
-สร้างแคมเปญจำนวน ${count} คลิปสำหรับแพลตฟอร์ม ${platform}
-สินค้า: ${product.name}
-แบรนด์: ${product.brand||"ไม่ระบุ"}
-หมวด: ${product.category}
-ราคา: ${product.price} บาท
-กลุ่มเป้าหมาย: ${target}
-โทน: ${tone}
-
-ข้อกำหนด:
-- แต่ละคลิปต้องมีมุมเล่าเรื่องต่างกันอย่างชัดเจน
-- ความยาวสคริปต์ประมาณ 30–45 วินาที
-- ห้ามกล่าวอ้างเกินจริงและห้ามแต่งข้อมูลสินค้า
-- ระบุสิ่งที่ควรเช็กก่อนซื้อ
-- Image Prompt และ Video Prompt ให้เขียนเป็นภาษาอังกฤษ
-- Video Prompt เป็นวิดีโอแนวตั้ง 9:16
-
-ตอบเป็น JSON Array ที่ valid เท่านั้น ห้ามมี Markdown และห้ามมีข้อความก่อนหรือหลัง JSON
-โครงสร้างของแต่ละรายการต้องเป็น:
-{
-  "title":"ชื่อคลิป",
-  "hook":"ประโยคเปิดคลิป",
-  "script":"สคริปต์เต็ม",
-  "caption":"แคปชัน",
-  "hashtags":["#แท็ก1","#แท็ก2"],
-  "storyboard":[{"scene":1,"visual":"ภาพที่เห็น","voiceover":"เสียงพูด"}],
-  "image_prompt":"English image prompt",
-  "video_prompt":"English video prompt"
-}`;
-    setPrompt(value); setMessage("สร้าง Prompt แล้ว กดคัดลอกและนำไปวางใน ChatGPT");
+function PublishingCalendar({contents,campaigns,assets,refresh}:{contents:Content[];campaigns:Campaign[];assets:Asset[];refresh:()=>void}){
+  const [selected,setSelected]=useState<Content|null>(null);
+  const [month,setMonth]=useState(()=>{const d=new Date();return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`;});
+  const [query,setQuery]=useState("");
+  const [filter,setFilter]=useState("All");
+  const scheduled=contents.filter(c=>c.scheduled_at).sort((a,b)=>String(a.scheduled_at).localeCompare(String(b.scheduled_at)));
+  const filtered=scheduled.filter(c=>{
+    const inMonth=String(c.scheduled_at||"").startsWith(month);
+    const text=`${c.title} ${c.character} ${c.platform}`.toLowerCase();
+    return inMonth&&(filter==="All"||c.publish_status===filter)&&(!query||text.includes(query.toLowerCase()));
+  });
+  const ready=contents.filter(c=>c.status==="Ready"&&!c.scheduled_at);
+  const posted=contents.filter(c=>c.publish_status==="Published"||c.status==="Posted");
+  const calendarDays=useMemo(()=>{
+    const [y,m]=month.split("-").map(Number); const first=new Date(y,m-1,1); const last=new Date(y,m,0);
+    const cells:Array<{date:string|null;day:number|null;items:Content[]}>=[];
+    for(let i=0;i<first.getDay();i++)cells.push({date:null,day:null,items:[]});
+    for(let d=1;d<=last.getDate();d++){
+      const date=`${y}-${String(m).padStart(2,"0")}-${String(d).padStart(2,"0")}`;
+      cells.push({date,day:d,items:filtered.filter(c=>String(c.scheduled_at).slice(0,10)===date)});
+    }
+    while(cells.length%7)cells.push({date:null,day:null,items:[]}); return cells;
+  },[month,filtered]);
+  async function saveSchedule(e:FormEvent<HTMLFormElement>){
+    e.preventDefault(); if(!supabase||!selected)return; const f=new FormData(e.currentTarget);
+    const scheduledAt=String(f.get("scheduled_at")||""); const publishStatus=String(f.get("publish_status")||"Scheduled");
+    const publishUrl=String(f.get("publish_url")||"")||null;
+    const updates:any={scheduled_at:scheduledAt?new Date(scheduledAt).toISOString():null,publish_status:publishStatus,publish_url:publishUrl};
+    if(publishStatus==="Published"){updates.status="Posted";updates.published_at=new Date().toISOString();}
+    const {error}=await supabase.from("contents").update(updates).eq("id",selected.id);
+    if(error)alert(error.message);else{setSelected(null);refresh();}
   }
-
-  async function copyPrompt(){if(!prompt)return;await navigator.clipboard.writeText(prompt);setMessage("คัดลอก Prompt แล้ว");}
-  async function openChat(){if(prompt) await navigator.clipboard.writeText(prompt); window.open("https://chatgpt.com/","_blank","noopener,noreferrer");}
-  function parse(){
-    try{
-      const clean=jsonText.trim().replace(/^```json\s*/i,"").replace(/```$/i,"").trim();
-      const parsed=JSON.parse(clean);
-      if(!Array.isArray(parsed)||!parsed.length) throw new Error("ข้อมูลต้องเป็น JSON Array");
-      const validated=parsed.map((x:any,i:number)=>{
-        if(!x.title||!x.hook||!x.script) throw new Error(`รายการที่ ${i+1} ขาด title, hook หรือ script`);
-        return {...x,hashtags:Array.isArray(x.hashtags)?x.hashtags:[],storyboard:Array.isArray(x.storyboard)?x.storyboard:[]};
-      });
-      setPreview(validated); setMessage(`ตรวจสอบสำเร็จ พบ ${validated.length} คลิป`);
-    }catch(e){setPreview([]);setMessage(`JSON ไม่ถูกต้อง: ${e instanceof Error?e.message:"Unknown error"}`);}
-  }
-  async function save(){
-    if(!supabase||!product||!preview.length)return;
-    const campaignName=`${product.name} · ${platform} · ${new Date().toLocaleDateString("th-TH")}`;
-    const {data:campaign,error:campaignError}=await supabase.from("campaigns").insert({
-      name:campaignName,product_id:product.id,platform,target_audience:target,tone,status:"Active",total_clips:preview.length
-    }).select("id").single();
-    if(campaignError||!campaign){setMessage(campaignError?.message||"สร้าง Campaign ไม่สำเร็จ");return;}
-    const rows=preview.map(x=>({campaign_id:campaign.id,product_id:product.id,title:x.title,character:creatorByCategory(product.category),platform,status:"Script",hook:x.hook,script:x.script,caption:`${x.caption||""}\n\n${x.hashtags.join(" ")}`.trim(),storyboard:x.storyboard,image_prompt:x.image_prompt||null,video_prompt:x.video_prompt||null}));
-    const {error}=await supabase.from("contents").insert(rows);
-    if(error){await supabase.from("campaigns").delete().eq("id",campaign.id);setMessage(error.message);return;}
-    setMessage(`สร้าง Campaign และบันทึก ${rows.length} คลิปแล้ว`); setPreview([]); setJsonText(""); refresh();
-  }
-
-  return <div className="studio">
-    <div className="studioHero"><div><span className="badge">FREE • NO API COST</span><h2>Campaign Generator</h2><p>สร้าง Prompt → ใช้ใน ChatGPT → นำ JSON กลับมาบันทึกเป็นหลายคอนเทนต์</p></div><b>{VERSION}</b></div>
-    <div className="grid2">
-      <section className="panel form"><h2>1. ตั้งค่า Campaign</h2><label>สินค้า<select value={productId} onChange={e=>setProductId(e.target.value)}><option value="">— เลือกสินค้า —</option>{products.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}</select></label><label>กลุ่มเป้าหมาย<textarea rows={3} value={target} onChange={e=>setTarget(e.target.value)}/></label><label>โทนการสื่อสาร<input value={tone} onChange={e=>setTone(e.target.value)}/></label><div className="two"><label>แพลตฟอร์ม<select value={platform} onChange={e=>setPlatform(e.target.value)}><option>TikTok</option><option>Instagram Reels</option><option>YouTube Shorts</option><option>Facebook Reels</option></select></label><label>จำนวนคลิป<input type="number" min="1" max="20" value={count} onChange={e=>setCount(Math.max(1,Math.min(20,Number(e.target.value))))}/></label></div><button className="primary" onClick={buildPrompt}>✦ สร้าง Campaign Prompt</button></section>
-      <section className="panel form"><h2>2. Prompt พร้อมใช้</h2>{prompt?<><textarea className="promptBox" readOnly rows={16} value={prompt}/><div className="actions"><button className="secondary" onClick={copyPrompt}>คัดลอก Prompt</button><button className="primary" onClick={openChat}>เปิด ChatGPT</button></div></>:<Empty text="เลือกสินค้าและกดสร้าง Campaign Prompt"/>}</section>
-    </div>
-    <section className="panel form"><h2>3. Import Campaign Result</h2><p>คัดลอก JSON ที่ ChatGPT ตอบกลับมาวางในช่องนี้</p><textarea rows={10} value={jsonText} onChange={e=>setJsonText(e.target.value)} placeholder='วาง JSON ที่ขึ้นต้นด้วย [ และลงท้ายด้วย ]'/><div className="actions"><button className="secondary" onClick={parse}>ตรวจสอบ JSON</button>{preview.length>0&&<button className="primary" onClick={save}>บันทึก {preview.length} คลิปเข้า Content Queue</button>}</div>{message&&<div className="studioMessage">{message}</div>}{preview.length>0&&<div className="preview">{preview.map((x,i)=><article key={i}><small>CLIP {i+1}</small><b>{x.title}</b><p>{x.hook}</p><span>{x.hashtags.join(" ")}</span></article>)}</div>}</section>
-  </div>;
+  async function unschedule(content:Content){if(!supabase||!confirm("นำคลิปนี้ออกจากตารางเผยแพร่หรือไม่?"))return;const {error}=await supabase.from("contents").update({scheduled_at:null,publish_status:"Draft"}).eq("id",content.id);if(error)alert(error.message);else refresh();}
+  const thumb=(id:string)=>assets.find(a=>a.content_id===id&&a.asset_type==="thumbnail")?.public_url||assets.find(a=>a.content_id===id&&a.asset_type==="image")?.public_url;
+  return <>
+    <div className="factoryToolbar"><div><h2>Publishing Calendar</h2><p>วางแผนวันและเวลาลงคอนเทนต์ พร้อมติดตามสถานะการเผยแพร่</p></div><div className="factoryFilters"><input type="month" value={month} onChange={e=>setMonth(e.target.value)}/><input placeholder="ค้นหาคลิป" value={query} onChange={e=>setQuery(e.target.value)}/><select value={filter} onChange={e=>setFilter(e.target.value)}><option>All</option><option>Scheduled</option><option>Published</option><option>Failed</option></select></div></div>
+    <section className="kpis assetKpis"><Kpi label="รอจัดตาราง" value={String(ready.length)}/><Kpi label="มีตารางแล้ว" value={String(scheduled.length)}/><Kpi label="เผยแพร่แล้ว" value={String(posted.length)}/><Kpi label="เดือนนี้" value={String(filtered.length)}/></section>
+    {ready.length>0&&<section className="panel publishQueue"><div className="panelTop"><div><h2>Ready to Schedule</h2><p>คลิปที่สถานะ Ready และยังไม่ได้กำหนดวันลง</p></div></div><div className="scheduleStrip">{ready.map(c=><button key={c.id} className="scheduleMini" onClick={()=>setSelected(c)}>{thumb(c.id)?<img src={thumb(c.id)} alt=""/>:<span>▶</span>}<div><b>{c.title}</b><small>{c.character} · {c.platform}</small></div><em>จัดตาราง</em></button>)}</div></section>}
+    <section className="panel calendarPanel"><div className="calendarWeek">{["อา","จ","อ","พ","พฤ","ศ","ส"].map(x=><b key={x}>{x}</b>)}</div><div className="calendarGrid">{calendarDays.map((cell,i)=><div className={`calendarCell ${cell.date?"":"blank"}`} key={i}>{cell.day&&<span className="dayNumber">{cell.day}</span>}{cell.items.map(c=><button key={c.id} className={`calendarEvent ${c.publish_status.toLowerCase()}`} onClick={()=>setSelected(c)}><b>{new Date(String(c.scheduled_at)).toLocaleTimeString("th-TH",{hour:"2-digit",minute:"2-digit"})}</b><span>{c.title}</span></button>)}</div>)}</div></section>
+    <section className="panel"><div className="panelTop"><div><h2>Publishing Queue</h2><p>รายการที่กำหนดวันเผยแพร่แล้ว</p></div></div>{scheduled.length?<div className="publishList">{scheduled.map(c=><article key={c.id}><div className="publishMedia">{thumb(c.id)?<img src={thumb(c.id)} alt=""/>:<span>▶</span>}</div><div className="publishInfo"><span className={`publishBadge ${c.publish_status.toLowerCase()}`}>{c.publish_status}</span><h3>{c.title}</h3><p>{c.character} · {c.platform} · {new Date(String(c.scheduled_at)).toLocaleString("th-TH",{dateStyle:"medium",timeStyle:"short"})}</p></div><div className="publishActions">{c.publish_url&&<a href={c.publish_url} target="_blank" rel="noreferrer">เปิดโพสต์</a>}<button onClick={()=>setSelected(c)}>แก้ไข</button><button className="dangerText" onClick={()=>unschedule(c)}>ยกเลิก</button></div></article>)}</div>:<Empty text="ยังไม่มีคลิปในตารางเผยแพร่"/>}</section>
+    {selected&&<Modal title="กำหนดการเผยแพร่" close={()=>setSelected(null)}><form className="form" onSubmit={saveSchedule}><div className="scheduleSelected"><b>{selected.title}</b><small>{selected.character} · {selected.platform}</small></div><label>วันและเวลาเผยแพร่<input name="scheduled_at" type="datetime-local" required defaultValue={selected.scheduled_at?toLocalInput(selected.scheduled_at):""}/></label><label>สถานะ<select name="publish_status" defaultValue={selected.publish_status||"Scheduled"}><option>Scheduled</option><option>Published</option><option>Failed</option></select></label><label>ลิงก์โพสต์จริง<input name="publish_url" type="url" defaultValue={selected.publish_url||""} placeholder="https://..."/></label><button className="primary">บันทึกตารางเผยแพร่</button></form></Modal>}
+  </>;
 }
 
+function toLocalInput(value:string){const d=new Date(value);const pad=(n:number)=>String(n).padStart(2,"0");return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;}
+
+function formatFileSize(bytes:number){if(!bytes)return "0 B";const units=["B","KB","MB","GB"];const i=Math.min(Math.floor(Math.log(bytes)/Math.log(1024)),units.length-1);return `${(bytes/Math.pow(1024,i)).toFixed(i?1:0)} ${units[i]}`;}
+
+function CreativeEngine({products,refresh}:{products:Product[];refresh:()=>void}){
+  const [productId,setProductId]=useState("");
+  const [target,setTarget]=useState("ผู้หญิงวัยทำงาน อายุ 22–35 ปี ที่ต้องการข้อมูลจริงก่อนตัดสินใจซื้อ");
+  const [tone,setTone]=useState("จริงใจ เป็นธรรมชาติ ทันสมัย ไม่ขายเกินจริง");
+  const [platform,setPlatform]=useState("TikTok");
+  const [goal,setGoal]=useState("Conversion");
+  const [creator,setCreator]=useState("AUTO");
+  const [creativity,setCreativity]=useState("Bold");
+  const [count,setCount]=useState(7);
+  const [mustInclude,setMustInclude]=useState("ระบุสิ่งที่ควรเช็กก่อนซื้อ และหลีกเลี่ยงข้อมูลที่สินค้าไม่ได้ระบุ");
+  const [generating,setGenerating]=useState(false);
+  const [message,setMessage]=useState("");
+  const [result,setResult]=useState<{campaign_id?:string;campaign_name?:string;big_idea?:string;strategy_summary?:string;quality_score?:number;items:CampaignItem[]} | null>(null);
+  const product=products.find(p=>p.id===productId);
+
+  async function generate(){
+    if(!supabase||!product){setMessage("กรุณาเลือกสินค้าก่อน");return;}
+    setGenerating(true);setMessage("NOVA กำลังวิเคราะห์สินค้าและประชุมทีม AI...");setResult(null);
+    const {data,error}=await supabase.functions.invoke("creative-engine",{body:{
+      product, target_audience:target, tone, platform, goal, creator, creativity,
+      clip_count:count, must_include:mustInclude
+    }});
+    setGenerating(false);
+    if(error){setMessage(`สร้างไม่สำเร็จ: ${error.message}`);return;}
+    if(!data?.items?.length){setMessage(data?.error||"AI ไม่ได้ส่งผลลัพธ์กลับมา");return;}
+    setResult(data);setMessage(`สร้างและบันทึก ${data.items.length} คลิปเรียบร้อยแล้ว`);await refresh();
+  }
+
+  async function regenerate(){await generate();}
+
+  return <div className="creativeEngine">
+    <section className="creativeHero"><div><span className="badge">NOVA MULTI-AGENT AI</span><h2>One click. Full campaign.</h2><p>Strategist → Creative Director → Copywriter → Storyboard Director → Prompt Engineer → Quality Checker</p></div><div className="aiOrb">✦</div></section>
+    <section className="creativeLayout">
+      <div className="panel form creativeControl"><div className="sectionTitle"><div><small>CAMPAIGN BRIEF</small><h2>ให้ NOVA คิดงานแทนทั้งทีม</h2></div><span className="smartBadge">SMART MODE</span></div>
+        <label>สินค้า<select value={productId} onChange={e=>setProductId(e.target.value)}><option value="">— เลือกสินค้า —</option>{products.map(p=><option key={p.id} value={p.id}>{p.name} · {p.brand||p.category}</option>)}</select></label>
+        {product&&<div className="productBrief"><b>{product.name}</b><span>{product.category} · {money(product.price)} · Commission {money(product.commission)}</span></div>}
+        <div className="two"><label>เป้าหมาย<select value={goal} onChange={e=>setGoal(e.target.value)}><option>Conversion</option><option>Awareness</option><option>Trust</option><option>Product Education</option><option>Launch</option></select></label><label>แพลตฟอร์ม<select value={platform} onChange={e=>setPlatform(e.target.value)}><option>TikTok</option><option>Instagram Reels</option><option>YouTube Shorts</option><option>Facebook Reels</option></select></label></div>
+        <div className="two"><label>Creator<select value={creator} onChange={e=>setCreator(e.target.value)}><option>AUTO</option><option>LUNA</option><option>MAYA</option><option>ETHAN</option><option>ARIA</option></select></label><label>Creativity<select value={creativity} onChange={e=>setCreativity(e.target.value)}><option>Safe</option><option>Balanced</option><option>Bold</option><option>Experimental</option></select></label></div>
+        <label>กลุ่มเป้าหมาย<textarea rows={3} value={target} onChange={e=>setTarget(e.target.value)}/></label>
+        <label>โทนแบรนด์<input value={tone} onChange={e=>setTone(e.target.value)}/></label>
+        <label>สิ่งที่ต้องมี / ข้อห้าม<textarea rows={3} value={mustInclude} onChange={e=>setMustInclude(e.target.value)}/></label>
+        <label>จำนวนคลิป <b>{count}</b><input type="range" min="3" max="15" value={count} onChange={e=>setCount(Number(e.target.value))}/></label>
+        <button className="generateButton" disabled={generating||!productId} onClick={generate}>{generating?<><span className="spinner"/> กำลังสร้าง Creative Universe...</>:<>✦ GENERATE FULL CAMPAIGN</>}</button>
+        <small className="helper">ระบบจะสร้าง Campaign และบันทึกทุกคลิปเข้า Content Factory อัตโนมัติ</small>
+        {message&&<div className={message.includes("ไม่สำเร็จ")?"engineError":"engineMessage"}>{message}</div>}
+      </div>
+      <aside className="creativeBrain">
+        <div className="brainHead"><span>LIVE AI WORKFLOW</span><b>{generating?"PROCESSING":"READY"}</b></div>
+        {[['01','STRATEGIST','วิเคราะห์สินค้า เป้าหมาย และแรงจูงใจซื้อ'],['02','CREATIVE DIRECTOR','สร้าง Big Idea และมุมเล่าเรื่องไม่ซ้ำ'],['03','COPYWRITER','เขียน Hook, Script และ CTA'],['04','STORYBOARD','แตกฉาก ภาพ เสียง และจังหวะ'],['05','PROMPT ENGINEER','สร้าง Image / Video Prompt ภาษาอังกฤษ'],['06','QUALITY CHECKER','ตรวจความซ้ำ ความจริง และคำกล่าวอ้าง']].map(([n,name,desc],i)=><div className={`brainStep ${generating?'running':''}`} style={{animationDelay:`${i*180}ms`}} key={name}><i>{n}</i><div><b>{name}</b><small>{desc}</small></div><span>✓</span></div>)}
+      </aside>
+    </section>
+    {result&&<section className="resultZone">
+      <div className="resultHeader"><div><span className="badge">CAMPAIGN CREATED</span><h2>{result.campaign_name||"NOVA Campaign"}</h2><p>{result.big_idea}</p></div><div className="qualityScore"><small>QUALITY</small><b>{result.quality_score||90}</b><span>/100</span></div></div>
+      {result.strategy_summary&&<div className="strategyCallout"><b>Creative Strategy</b><p>{result.strategy_summary}</p></div>}
+      <div className="resultActions"><button className="secondary" onClick={regenerate} disabled={generating}>↻ สร้างชุดใหม่ทั้งหมด</button><button className="primary" onClick={()=>window.scrollTo({top:0,behavior:'smooth'})}>สร้าง Campaign ถัดไป</button></div>
+      <div className="creativeResults">{result.items.map((x,i)=><article key={i} className="creativeCard"><div className="creativeCardTop"><span>CLIP {String(i+1).padStart(2,'0')}</span><b>{(x as any).angle||"UNIQUE ANGLE"}</b></div><h3>{x.title}</h3><div className="hookBox">“{x.hook}”</div><p>{x.script}</p><details><summary>Storyboard & Production Prompts</summary><div className="detailBody"><b>Storyboard</b>{x.storyboard?.map((scene,j)=><div className="sceneRow" key={j}><i>{scene.scene}</i><span><strong>{scene.visual}</strong><small>{scene.voiceover}</small></span></div>)}<b>Image Prompt</b><code>{x.image_prompt}</code><b>Video Prompt</b><code>{x.video_prompt}</code><b>Caption</b><p>{x.caption}</p></div></details></article>)}</div>
+    </section>}
+  </div>;
+}
 function Analytics({contents,revenue,views,clicks}:{contents:Content[];revenue:number;views:number;clicks:number}){return <div className="grid2"><div className="panel metric"><small>Revenue per 1,000 views</small><strong>{money(views?revenue/views*1000:0)}</strong></div><div className="panel metric"><small>Clicks</small><strong>{clicks.toLocaleString()}</strong></div><div className="panel full"><h2>Performance</h2>{contents.slice(0,10).map(c=><Row key={c.id} left={c.title} sub={`${c.views} views · ${c.clicks} clicks`} right={money(c.revenue)}/>)}{!contents.length&&<Empty/>}</div></div>}
 function Kpi({label,value}:{label:string;value:string}){return <div className="kpi"><small>{label}</small><strong>{value}</strong></div>}
 function Row({left,sub,right}:{left:string;sub:string;right:string}){return <div className="row"><div><b>{left}</b><small>{sub}</small></div><span className="pill">{right}</span></div>}
