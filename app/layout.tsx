@@ -1,3 +1,6 @@
 import "./globals.css";
-export const metadata={title:"NOVA OS",description:"AI Creator Company Operating System"};
-export default function Layout({children}:{children:React.ReactNode}){return <html lang="th"><body>{children}</body></html>}
+import type { Metadata } from "next";
+export const metadata: Metadata = { title: "NOVA OS v3.1", description: "Free AI Campaign Studio" };
+export default function RootLayout({children}:{children:React.ReactNode}) {
+  return <html lang="th"><body>{children}</body></html>;
+}

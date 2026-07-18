@@ -1,28 +1,184 @@
 "use client";
-import {FormEvent,useCallback,useEffect,useMemo,useState} from "react";
-import {configured,supabase} from "@/lib/supabase";
-type Product={id:string;name:string;brand:string|null;category:string;price:number;commission:number;affiliate_link:string|null;status:string;revenue:number;created_at:string};
-type Content={id:string;title:string;character:string;platform:string;status:string;hook:string|null;script:string|null;caption:string|null;views:number;clicks:number;revenue:number;created_at:string};
-type Page="dashboard"|"products"|"content"|"ai"|"analytics";
-const sts=["Idea","Script","Production","Ready","Posted"];
-const money=(n:number|string|null|undefined)=>`฿${Number(n||0).toLocaleString("th-TH")}`;
+
+import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import { hasSupabaseConfig, supabase } from "@/lib/supabase";
+
+type Page = "dashboard" | "products" | "content" | "studio" | "analytics";
+type Product = { id:string; name:string; brand:string|null; category:string; price:number; commission:number; affiliate_link:string|null; status:string; revenue:number; created_at:string; };
+type Content = { id:string; title:string; character:string; platform:string; status:string; hook:string|null; script:string|null; caption:string|null; storyboard:unknown; image_prompt:string|null; video_prompt:string|null; views:number; clicks:number; revenue:number; created_at:string; };
+type CampaignItem = { title:string; hook:string; script:string; caption:string; hashtags:string[]; storyboard:Array<{scene:number;visual:string;voiceover:string}>; image_prompt:string; video_prompt:string; };
+
+const VERSION = "v3.1 REAL";
+const statuses = ["Idea","Script","Production","Ready","Posted"];
+const money = (value:number|string|null|undefined) => `฿${Number(value || 0).toLocaleString("th-TH")}`;
+const creatorByCategory = (category:string) => category === "Beauty" ? "LUNA" : category === "Office" ? "MAYA" : category === "Tech" ? "ETHAN" : "ARIA";
+
 export default function NovaApp(){
- const[page,setPage]=useState<Page>("dashboard"),[products,setProducts]=useState<Product[]>([]),[contents,setContents]=useState<Content[]>([]),[loading,setLoading]=useState(true),[note,setNote]=useState(""),[pm,setPm]=useState(false),[cm,setCm]=useState(false);
- const load=useCallback(async()=>{if(!supabase){setLoading(false);return}setLoading(true);const[p,c]=await Promise.all([supabase.from("products").select("*").order("created_at",{ascending:false}),supabase.from("contents").select("*").order("created_at",{ascending:false})]);if(p.error||c.error)setNote((p.error||c.error)?.message||"โหลดข้อมูลไม่สำเร็จ");setProducts((p.data||[]) as Product[]);setContents((c.data||[]) as Content[]);setLoading(false)},[]);
- useEffect(()=>{load()},[load]);
- const revenue=useMemo(()=>products.reduce((s,p)=>s+Number(p.revenue||0),0)+contents.reduce((s,c)=>s+Number(c.revenue||0),0),[products,contents]);
- const views=useMemo(()=>contents.reduce((s,c)=>s+Number(c.views||0),0),[contents]);const clicks=useMemo(()=>contents.reduce((s,c)=>s+Number(c.clicks||0),0),[contents]);
- async function addProduct(e:FormEvent<HTMLFormElement>){e.preventDefault();if(!supabase)return;const f=new FormData(e.currentTarget);const{error}=await supabase.from("products").insert({name:f.get("name"),brand:f.get("brand")||null,category:f.get("category"),price:Number(f.get("price")||0),commission:Number(f.get("commission")||0),affiliate_link:f.get("affiliate_link")||null,status:f.get("status"),revenue:0});if(error)return setNote(error.message);setPm(false);e.currentTarget.reset();load()}
- async function addContent(e:FormEvent<HTMLFormElement>){e.preventDefault();if(!supabase)return;const f=new FormData(e.currentTarget);const{error}=await supabase.from("contents").insert({title:f.get("title"),character:f.get("character"),platform:f.get("platform"),status:f.get("status"),hook:f.get("hook")||null});if(error)return setNote(error.message);setCm(false);e.currentTarget.reset();load()}
- async function move(id:string,status:string){if(!supabase)return;const{error}=await supabase.from("contents").update({status}).eq("id",id);if(error)setNote(error.message);else load()}
- async function del(id:string){if(!supabase||!confirm("ลบสินค้านี้หรือไม่?"))return;const{error}=await supabase.from("products").delete().eq("id",id);if(error)setNote(error.message);else load()}
- return <div className="shell"><aside><div className="brand"><span>✦</span><div><b>NOVA OS</b><small>Creator Company</small></div></div><nav>{[["dashboard","⌂","Dashboard"],["products","▣","Products"],["content","▶","Content"],["ai","✦","AI Studio"],["analytics","▥","Analytics"]].map(([id,ic,l])=><button key={id} className={page===id?"active":""} onClick={()=>setPage(id as Page)}><span>{ic}</span>{l}</button>)}</nav><div className={`status ${configured?"online":"offline"}`}>{configured?"● Supabase connected":"● Environment not set"}</div></aside><main><header><div><h1>{{dashboard:"Dashboard",products:"Product Center",content:"Content Queue",ai:"AI Studio",analytics:"Analytics"}[page]}</h1><p>AI Creator Company Operating System</p></div><div className="actions"><button onClick={load}>↻ Refresh</button>{page==="products"&&<button className="primary" onClick={()=>setPm(true)}>+ เพิ่มสินค้า</button>}{page==="content"&&<button className="primary" onClick={()=>setCm(true)}>+ เพิ่มคอนเทนต์</button>}</div></header>{!configured&&<div className="warning"><b>ยังไม่ได้ตั้งค่า Environment Variables</b><span>เพิ่ม NEXT_PUBLIC_SUPABASE_URL และ NEXT_PUBLIC_SUPABASE_ANON_KEY ใน Vercel</span></div>}{note&&<div className="notice" onClick={()=>setNote("")}>{note} ×</div>}{loading?<div className="loading">กำลังโหลดข้อมูล...</div>:<>{page==="dashboard"&&<><section className="kpis"><Kpi l="รายได้รวม" v={money(revenue)} s="Products + Content"/><Kpi l="ยอดวิวรวม" v={views.toLocaleString()} s="ทุกแพลตฟอร์ม"/><Kpi l="คอนเทนต์" v={String(contents.length)} s={`${contents.filter(c=>c.status==="Posted").length} โพสต์แล้ว`}/><Kpi l="CTR" v={`${views?(clicks/views*100).toFixed(2):"0.00"}%`} s={`${clicks} clicks`}/></section><section className="grid"><Panel title="Content Pipeline" sub="งานล่าสุดจาก Supabase">{contents.slice(0,7).map(c=><Row key={c.id} a={c.title} b={`${c.character} · ${c.platform}`} r={c.status}/>)}{!contents.length&&<Empty/>}</Panel><Panel title="Top Products" sub="เรียงตามรายได้">{[...products].sort((a,b)=>b.revenue-a.revenue).slice(0,7).map((p,i)=><Row key={p.id} a={`${i+1}. ${p.name}`} b={p.category} r={money(p.revenue)}/>)}{!products.length&&<Empty/>}</Panel></section><section className="chars">{[["LUNA","Beauty"],["MAYA","Office"],["ETHAN","Tech"],["ARIA","Lifestyle"]].map(x=><div className="char" key={x[0]}><small>{x[1]} Creator</small><strong>{x[0]}</strong><span>ACTIVE</span></div>)}</section></>}{page==="products"&&<div className="panel table"><table><thead><tr><th>สินค้า</th><th>หมวด</th><th>ราคา</th><th>คอมมิชชั่น</th><th>รายได้</th><th>สถานะ</th><th/></tr></thead><tbody>{products.map(p=><tr key={p.id}><td><b>{p.name}</b><small>{p.brand||"—"}</small></td><td>{p.category}</td><td>{money(p.price)}</td><td>{money(p.commission)}</td><td>{money(p.revenue)}</td><td><span className="pill">{p.status}</span></td><td><button className="danger" onClick={()=>del(p.id)}>ลบ</button></td></tr>)}</tbody></table>{!products.length&&<Empty/>}</div>}{page==="content"&&<div className="kanban">{sts.map(s=><div className="col" key={s}><h3>{s}<span>{contents.filter(c=>c.status===s).length}</span></h3>{contents.filter(c=>c.status===s).map(c=><div className="card" key={c.id}><b>{c.title}</b><small>{c.character} · {c.platform}</small><select value={c.status} onChange={e=>move(c.id,e.target.value)}>{sts.map(x=><option key={x}>{x}</option>)}</select></div>)}</div>)}</div>}{page==="ai"&&<AI products={products} reload={load}/>} {page==="analytics"&&<Analytics revenue={revenue} views={views} clicks={clicks} contents={contents}/>}</>}</main>{pm&&<Modal title="เพิ่มสินค้า" close={()=>setPm(false)}><form className="form" onSubmit={addProduct}><label>ชื่อสินค้า<input name="name" required/></label><label>แบรนด์<input name="brand"/></label><label>หมวด<select name="category"><option>Beauty</option><option>Office</option><option>Tech</option><option>Lifestyle</option></select></label><div className="two"><label>ราคา<input name="price" type="number" defaultValue="0"/></label><label>คอมมิชชั่น<input name="commission" type="number" defaultValue="0"/></label></div><label>Affiliate Link<input name="affiliate_link" type="url"/></label><label>สถานะ<select name="status"><option>Testing</option><option>Active</option><option>Paused</option></select></label><button className="primary">บันทึกลง Supabase</button></form></Modal>}{cm&&<Modal title="เพิ่มคอนเทนต์" close={()=>setCm(false)}><form className="form" onSubmit={addContent}><label>ชื่อคอนเทนต์<input name="title" required/></label><label>ตัวละคร<select name="character"><option>LUNA</option><option>MAYA</option><option>ETHAN</option><option>ARIA</option></select></label><label>แพลตฟอร์ม<select name="platform"><option>TikTok</option><option>Instagram</option><option>Facebook Reels</option><option>YouTube Shorts</option></select></label><label>สถานะ<select name="status">{sts.map(x=><option key={x}>{x}</option>)}</select></label><label>Hook<textarea name="hook" rows={3}/></label><button className="primary">บันทึกลง Supabase</button></form></Modal>}</div>}
-function Kpi({l,v,s}:{l:string,v:string,s:string}){return <div className="kpi"><small>{l}</small><strong>{v}</strong><span>{s}</span></div>}function Panel({title,sub,children}:{title:string,sub:string,children:React.ReactNode}){return <div className="panel"><h2>{title}</h2><p>{sub}</p>{children}</div>}function Row({a,b,r}:{a:string,b:string,r:string}){return <div className="row"><div><b>{a}</b><small>{b}</small></div><span className="pill">{r}</span></div>}function Empty(){return <div className="empty">ยังไม่มีข้อมูล</div>}function Modal({title,close,children}:{title:string,close:()=>void,children:React.ReactNode}){return <div className="back" onMouseDown={close}><div className="modal" onMouseDown={e=>e.stopPropagation()}><div className="mhead"><h2>{title}</h2><button onClick={close}>×</button></div>{children}</div></div>}
-function Analytics({revenue,views,clicks,contents}:{revenue:number,views:number,clicks:number,contents:Content[]}){const posted=contents.filter(c=>c.status==="Posted").length;return <div className="analytics"><div className="panel metric"><small>Revenue per 1,000 views</small><strong>{money(views?revenue/views*1000:0)}</strong><p>เปรียบเทียบประสิทธิภาพคอนเทนต์</p></div><div className="panel metric"><small>Clicks per post</small><strong>{posted?(clicks/posted).toFixed(1):"0"}</strong><p>ค่าเฉลี่ยจากโพสต์แล้ว</p></div><Panel title="Performance by Content" sub="ข้อมูลจริงจาก Supabase">{[...contents].sort((a,b)=>b.views-a.views).slice(0,10).map(c=><Row key={c.id} a={c.title} b={`${c.views} views · ${c.clicks} clicks`} r={money(c.revenue)}/>)}{!contents.length&&<Empty/>}</Panel></div>}
-function AI({products,reload}:{products:Product[],reload:()=>void}){
- const[id,setId]=useState(""),[target,setTarget]=useState("ผู้หญิงและผู้ชายวัย 18-35 ที่สนใจสินค้าคุ้มค่าและตัดสินใจซื้อจากรีวิวจริง"),[tone,setTone]=useState("เป็นธรรมชาติ จริงใจ สนุก กระชับ ไม่ขายเกินจริง"),[platform,setPlatform]=useState("TikTok"),[count,setCount]=useState(10),[prompt,setPrompt]=useState(""),[jsonText,setJsonText]=useState(""),[preview,setPreview]=useState<any[]>([]);const product=products.find(x=>x.id===id);
- function build(){if(!product)return alert("กรุณาเลือกสินค้า");setPrompt(`คุณคือทีมคอนเทนต์ของ NOVA Creator Company\n\nสร้างแคมเปญ Affiliate ภาษาไทยจำนวน ${count} คลิป สำหรับแพลตฟอร์ม ${platform}\n\nข้อมูลสินค้า\n- ชื่อสินค้า: ${product.name}\n- แบรนด์: ${product.brand||"ไม่ระบุ"}\n- หมวดหมู่: ${product.category}\n- ราคาโดยประมาณ: ${product.price} บาท\n- คอมมิชชั่น: ${product.commission} บาท\n- ลิงก์สินค้า: ${product.affiliate_link||"ไม่ระบุ"}\n\nกลุ่มเป้าหมาย\n${target}\n\nโทนการสื่อสาร\n${tone}\n\nข้อกำหนด\n- แต่ละคลิปยาวประมาณ 30-45 วินาที\n- ห้ามกล่าวอ้างเกินจริง\n- ต้องมีข้อควรพิจารณาก่อนซื้อ\n- Hook ต้องแตกต่างกันทุกคลิป\n- เหมาะกับวิดีโอแนวตั้ง 9:16\n- Image Prompt และ Video Prompt ให้เขียนเป็นภาษาอังกฤษ\n- ตอบเป็น JSON Array เท่านั้น ห้ามมีข้อความอธิบายนอก JSON\n\nใช้โครงสร้างนี้ทุกชิ้น\n[\n  {\n    "title":"ชื่อคอนเทนต์",\n    "hook":"ประโยคเปิดคลิป",\n    "script":"บทพูดเต็ม",\n    "caption":"แคปชัน",\n    "hashtags":["#แท็ก1","#แท็ก2"],\n    "storyboard":"Scene 1... Scene 2... Scene 3...",\n    "image_prompt":"English image prompt",\n    "video_prompt":"English video prompt"\n  }\n]`)}
- function parse(){try{const clean=jsonText.replace(/^```json\s*/i,"").replace(/```$/," ").trim();const data=JSON.parse(clean);if(!Array.isArray(data))throw new Error("ต้องเป็น JSON Array");setPreview(data)}catch(e:any){alert(`อ่าน JSON ไม่สำเร็จ: ${e.message}`)}}
- async function save(){if(!supabase||!product||!preview.length)return;const creator=product.category==="Beauty"?"LUNA":product.category==="Office"?"MAYA":product.category==="Tech"?"ETHAN":"ARIA";const campaignName=`${product.name} · ${new Date().toLocaleDateString("th-TH")}`;const rows=preview.map((x:any)=>({product_id:product.id,campaign_name:campaignName,title:x.title||`รีวิว ${product.name}`,character:creator,platform,status:"Script",hook:x.hook||null,script:x.script||null,caption:`${x.caption||""}${Array.isArray(x.hashtags)?`\n\n${x.hashtags.join(" ")}`:""}`,storyboard:x.storyboard||null,image_prompt:x.image_prompt||null,video_prompt:x.video_prompt||null,target_audience:target,tone}));const{error}=await supabase.from("contents").insert(rows);if(error)return alert(error.message);alert(`บันทึก ${rows.length} คอนเทนต์เข้า Content Queue แล้ว`);setPreview([]);setJsonText("");reload()}
- function openChat(){if(!prompt)return alert("กดสร้าง Prompt ก่อน");navigator.clipboard.writeText(prompt);window.open("https://chatgpt.com/","_blank","noopener,noreferrer")}
- return <div className="studio-stack"><div className="ai"><div className="panel form"><h2>Free Campaign Generator</h2><p>สร้าง Prompt ฟรี แล้วใช้กับ ChatGPT Plus ที่คุณมีอยู่</p><label>สินค้า<select value={id} onChange={e=>setId(e.target.value)}><option value="">— เลือกสินค้า —</option>{products.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}</select></label><label>กลุ่มเป้าหมาย<textarea rows={3} value={target} onChange={e=>setTarget(e.target.value)}/></label><label>โทนการสื่อสาร<input value={tone} onChange={e=>setTone(e.target.value)}/></label><div className="two"><label>แพลตฟอร์ม<select value={platform} onChange={e=>setPlatform(e.target.value)}><option>TikTok</option><option>Instagram Reels</option><option>YouTube Shorts</option><option>Facebook Reels</option></select></label><label>จำนวนคลิป<input type="number" min="1" max="20" value={count} onChange={e=>setCount(Number(e.target.value))}/></label></div><button className="primary" onClick={build}>✦ สร้าง Campaign Prompt</button></div><div className="panel result"><h2>Prompt พร้อมใช้</h2><p>คัดลอกไป ChatGPT โดยไม่เสียค่า API เพิ่ม</p>{!prompt?<Empty/>:<><textarea readOnly rows={18} value={prompt}/><div className="actions"><button onClick={()=>navigator.clipboard.writeText(prompt)}>คัดลอก Prompt</button><button className="primary" onClick={openChat}>เปิด ChatGPT</button></div><small className="helper">ระบบจะคัดลอก Prompt ให้ จากนั้นวางใน ChatGPT แล้วนำ JSON ที่ได้กลับมาใส่ด้านล่าง</small></>}</div></div><div className="panel import-panel"><h2>Import Campaign Result</h2><p>วาง JSON จาก ChatGPT แล้วบันทึกทุกคลิปเข้า Supabase</p><textarea rows={10} value={jsonText} onChange={e=>setJsonText(e.target.value)} placeholder="วาง JSON Array ที่ ChatGPT สร้างให้ตรงนี้"/><div className="actions"><button onClick={parse}>ตรวจสอบ JSON</button>{preview.length>0&&<button className="primary" onClick={save}>บันทึก {preview.length} คลิปเข้า Content Queue</button>}</div>{preview.length>0&&<div className="campaign-preview">{preview.map((x:any,i:number)=><div className="preview-card" key={i}><small>CLIP {i+1}</small><b>{x.title||"ไม่มีชื่อ"}</b><p>{x.hook||"ไม่มี Hook"}</p><span>{Array.isArray(x.hashtags)?x.hashtags.join(" "):""}</span></div>)}</div>}</div></div>}
+  const [page,setPage] = useState<Page>("dashboard");
+  const [products,setProducts] = useState<Product[]>([]);
+  const [contents,setContents] = useState<Content[]>([]);
+  const [loading,setLoading] = useState(true);
+  const [notice,setNotice] = useState("");
+  const [productModal,setProductModal] = useState(false);
+
+  const loadData = useCallback(async()=>{
+    if(!supabase){ setLoading(false); return; }
+    setLoading(true);
+    const [p,c] = await Promise.all([
+      supabase.from("products").select("*").order("created_at",{ascending:false}),
+      supabase.from("contents").select("*").order("created_at",{ascending:false})
+    ]);
+    if(p.error || c.error) setNotice((p.error || c.error)?.message || "โหลดข้อมูลไม่สำเร็จ");
+    setProducts((p.data || []) as Product[]);
+    setContents((c.data || []) as Content[]);
+    setLoading(false);
+  },[]);
+  useEffect(()=>{ loadData(); },[loadData]);
+
+  const revenue = useMemo(()=>products.reduce((s,p)=>s+Number(p.revenue||0),0)+contents.reduce((s,c)=>s+Number(c.revenue||0),0),[products,contents]);
+  const views = useMemo(()=>contents.reduce((s,c)=>s+Number(c.views||0),0),[contents]);
+  const clicks = useMemo(()=>contents.reduce((s,c)=>s+Number(c.clicks||0),0),[contents]);
+
+  async function addProduct(e:FormEvent<HTMLFormElement>){
+    e.preventDefault(); if(!supabase) return;
+    const f = new FormData(e.currentTarget);
+    const {error} = await supabase.from("products").insert({
+      name:f.get("name"), brand:f.get("brand") || null, category:f.get("category"),
+      price:Number(f.get("price")||0), commission:Number(f.get("commission")||0),
+      affiliate_link:f.get("affiliate_link") || null, status:"Active", revenue:0
+    });
+    if(error){setNotice(error.message);return;}
+    setProductModal(false); setNotice("เพิ่มสินค้าแล้ว"); loadData();
+  }
+
+  async function moveContent(id:string,status:string){
+    if(!supabase) return;
+    const {error}=await supabase.from("contents").update({status}).eq("id",id);
+    if(error) setNotice(error.message); else loadData();
+  }
+
+  return <div className="shell">
+    <aside className="sidebar">
+      <div className="brand"><span>✦</span><div><b>NOVA OS</b><small>Free Campaign Studio</small></div></div>
+      <div className="version">{VERSION}</div>
+      <nav>{[
+        ["dashboard","⌂","Dashboard"],["products","▣","Products"],["content","▶","Content"],["studio","✦","Campaign Studio"],["analytics","▥","Analytics"]
+      ].map(([id,icon,label])=><button key={id} className={page===id?"active":""} onClick={()=>setPage(id as Page)}><span>{icon}</span>{label}</button>)}</nav>
+      <div className={`connection ${hasSupabaseConfig?"online":"offline"}`}>● {hasSupabaseConfig?"Supabase connected":"Environment missing"}</div>
+    </aside>
+    <main>
+      <header><div><h1>{page==="studio"?"Free Campaign Studio":page[0].toUpperCase()+page.slice(1)}</h1><p>สร้างแคมเปญด้วย ChatGPT โดยไม่เสียค่า API เพิ่ม</p></div><button className="secondary" onClick={loadData}>↻ Refresh</button></header>
+      {!hasSupabaseConfig&&<div className="warning">ยังไม่ได้ตั้งค่า NEXT_PUBLIC_SUPABASE_URL และ NEXT_PUBLIC_SUPABASE_ANON_KEY</div>}
+      {notice&&<div className="notice" onClick={()=>setNotice("")}>{notice} ×</div>}
+      {loading?<div className="panel empty">กำลังโหลดข้อมูล...</div>:<>
+        {page==="dashboard"&&<Dashboard products={products} contents={contents} revenue={revenue} views={views} clicks={clicks}/>} 
+        {page==="products"&&<Products products={products} open={()=>setProductModal(true)}/>} 
+        {page==="content"&&<ContentBoard contents={contents} move={moveContent}/>} 
+        {page==="studio"&&<CampaignStudio products={products} refresh={loadData}/>} 
+        {page==="analytics"&&<Analytics contents={contents} revenue={revenue} views={views} clicks={clicks}/>} 
+      </>}
+    </main>
+    {productModal&&<Modal title="เพิ่มสินค้า" close={()=>setProductModal(false)}><form className="form" onSubmit={addProduct}>
+      <label>ชื่อสินค้า<input name="name" required/></label><label>แบรนด์<input name="brand"/></label>
+      <label>หมวดสินค้า<select name="category"><option>Beauty</option><option>Office</option><option>Tech</option><option>Lifestyle</option></select></label>
+      <div className="two"><label>ราคา<input name="price" type="number" min="0" defaultValue="0"/></label><label>คอมมิชชั่น<input name="commission" type="number" min="0" defaultValue="0"/></label></div>
+      <label>Affiliate Link<input name="affiliate_link" type="url"/></label><button className="primary">บันทึกสินค้า</button>
+    </form></Modal>}
+  </div>;
+}
+
+function Dashboard({products,contents,revenue,views,clicks}:{products:Product[];contents:Content[];revenue:number;views:number;clicks:number}){
+  const ctr=views?clicks/views*100:0;
+  return <><section className="kpis"><Kpi label="รายได้รวม" value={money(revenue)}/><Kpi label="ยอดวิวรวม" value={views.toLocaleString()}/><Kpi label="คอนเทนต์" value={String(contents.length)}/><Kpi label="CTR" value={`${ctr.toFixed(2)}%`}/></section>
+  <section className="grid2"><div className="panel"><h2>Content Pipeline</h2>{contents.slice(0,6).map(c=><Row key={c.id} left={c.title} sub={`${c.character} · ${c.platform}`} right={c.status}/>)}{!contents.length&&<Empty/>}</div><div className="panel"><h2>Top Products</h2>{products.slice(0,6).map((p,i)=><Row key={p.id} left={`${i+1}. ${p.name}`} sub={p.category} right={money(p.revenue)}/>)}{!products.length&&<Empty/>}</div></section>
+  <section className="creators">{[["LUNA","Beauty"],["MAYA","Office"],["ETHAN","Tech"],["ARIA","Lifestyle"]].map(([name,cat])=><div className="creator" key={name}><small>{cat} Creator</small><strong>{name}</strong><span>ACTIVE</span></div>)}</section></>;
+}
+
+function Products({products,open}:{products:Product[];open:()=>void}){return <div className="panel"><div className="panelTop"><div><h2>Product Center</h2><p>สินค้าทั้งหมดใน Supabase</p></div><button className="primary" onClick={open}>+ เพิ่มสินค้า</button></div><div className="tableWrap"><table><thead><tr><th>สินค้า</th><th>หมวด</th><th>ราคา</th><th>คอมมิชชั่น</th><th>สถานะ</th></tr></thead><tbody>{products.map(p=><tr key={p.id}><td><b>{p.name}</b><small>{p.brand||"—"}</small></td><td>{p.category}</td><td>{money(p.price)}</td><td>{money(p.commission)}</td><td><span className="pill">{p.status}</span></td></tr>)}</tbody></table></div>{!products.length&&<Empty/>}</div>}
+
+function ContentBoard({contents,move}:{contents:Content[];move:(id:string,status:string)=>void}){return <div className="kanban">{statuses.map(s=><div className="column" key={s}><h3>{s}<span>{contents.filter(c=>c.status===s).length}</span></h3>{contents.filter(c=>c.status===s).map(c=><div className="card" key={c.id}><b>{c.title}</b><small>{c.character} · {c.platform}</small><select value={c.status} onChange={e=>move(c.id,e.target.value)}>{statuses.map(x=><option key={x}>{x}</option>)}</select></div>)}</div>)}</div>}
+
+function CampaignStudio({products,refresh}:{products:Product[];refresh:()=>void}){
+  const [productId,setProductId]=useState("");
+  const [target,setTarget]=useState("ผู้หญิงวัยทำงาน อายุ 22–35 ปี ที่ต้องการข้อมูลก่อนตัดสินใจซื้อ");
+  const [tone,setTone]=useState("จริงใจ เป็นธรรมชาติ ไม่ขายเกินจริง");
+  const [platform,setPlatform]=useState("TikTok");
+  const [count,setCount]=useState(5);
+  const [prompt,setPrompt]=useState("");
+  const [jsonText,setJsonText]=useState("");
+  const [preview,setPreview]=useState<CampaignItem[]>([]);
+  const [message,setMessage]=useState("");
+  const product=products.find(p=>p.id===productId);
+
+  function buildPrompt(){
+    if(!product){setMessage("กรุณาเลือกสินค้าก่อน");return;}
+    const value=`คุณเป็นทีมสร้างคอนเทนต์ Affiliate ภาษาไทยของ NOVA OS
+
+สร้างแคมเปญจำนวน ${count} คลิปสำหรับแพลตฟอร์ม ${platform}
+สินค้า: ${product.name}
+แบรนด์: ${product.brand||"ไม่ระบุ"}
+หมวด: ${product.category}
+ราคา: ${product.price} บาท
+กลุ่มเป้าหมาย: ${target}
+โทน: ${tone}
+
+ข้อกำหนด:
+- แต่ละคลิปต้องมีมุมเล่าเรื่องต่างกันอย่างชัดเจน
+- ความยาวสคริปต์ประมาณ 30–45 วินาที
+- ห้ามกล่าวอ้างเกินจริงและห้ามแต่งข้อมูลสินค้า
+- ระบุสิ่งที่ควรเช็กก่อนซื้อ
+- Image Prompt และ Video Prompt ให้เขียนเป็นภาษาอังกฤษ
+- Video Prompt เป็นวิดีโอแนวตั้ง 9:16
+
+ตอบเป็น JSON Array ที่ valid เท่านั้น ห้ามมี Markdown และห้ามมีข้อความก่อนหรือหลัง JSON
+โครงสร้างของแต่ละรายการต้องเป็น:
+{
+  "title":"ชื่อคลิป",
+  "hook":"ประโยคเปิดคลิป",
+  "script":"สคริปต์เต็ม",
+  "caption":"แคปชัน",
+  "hashtags":["#แท็ก1","#แท็ก2"],
+  "storyboard":[{"scene":1,"visual":"ภาพที่เห็น","voiceover":"เสียงพูด"}],
+  "image_prompt":"English image prompt",
+  "video_prompt":"English video prompt"
+}`;
+    setPrompt(value); setMessage("สร้าง Prompt แล้ว กดคัดลอกและนำไปวางใน ChatGPT");
+  }
+
+  async function copyPrompt(){if(!prompt)return;await navigator.clipboard.writeText(prompt);setMessage("คัดลอก Prompt แล้ว");}
+  async function openChat(){if(prompt) await navigator.clipboard.writeText(prompt); window.open("https://chatgpt.com/","_blank","noopener,noreferrer");}
+  function parse(){
+    try{
+      const clean=jsonText.trim().replace(/^```json\s*/i,"").replace(/```$/i,"").trim();
+      const parsed=JSON.parse(clean);
+      if(!Array.isArray(parsed)||!parsed.length) throw new Error("ข้อมูลต้องเป็น JSON Array");
+      const validated=parsed.map((x:any,i:number)=>{
+        if(!x.title||!x.hook||!x.script) throw new Error(`รายการที่ ${i+1} ขาด title, hook หรือ script`);
+        return {...x,hashtags:Array.isArray(x.hashtags)?x.hashtags:[],storyboard:Array.isArray(x.storyboard)?x.storyboard:[]};
+      });
+      setPreview(validated); setMessage(`ตรวจสอบสำเร็จ พบ ${validated.length} คลิป`);
+    }catch(e){setPreview([]);setMessage(`JSON ไม่ถูกต้อง: ${e instanceof Error?e.message:"Unknown error"}`);}
+  }
+  async function save(){
+    if(!supabase||!product||!preview.length)return;
+    const rows=preview.map(x=>({product_id:product.id,title:x.title,character:creatorByCategory(product.category),platform,status:"Script",hook:x.hook,script:x.script,caption:`${x.caption||""}\n\n${x.hashtags.join(" ")}`.trim(),storyboard:x.storyboard,image_prompt:x.image_prompt||null,video_prompt:x.video_prompt||null}));
+    const {error}=await supabase.from("contents").insert(rows);
+    if(error){setMessage(error.message);return;}
+    setMessage(`บันทึก ${rows.length} คลิปเข้า Content Queue แล้ว`); setPreview([]); setJsonText(""); refresh();
+  }
+
+  return <div className="studio">
+    <div className="studioHero"><div><span className="badge">FREE • NO API COST</span><h2>Campaign Generator</h2><p>สร้าง Prompt → ใช้ใน ChatGPT → นำ JSON กลับมาบันทึกเป็นหลายคอนเทนต์</p></div><b>{VERSION}</b></div>
+    <div className="grid2">
+      <section className="panel form"><h2>1. ตั้งค่า Campaign</h2><label>สินค้า<select value={productId} onChange={e=>setProductId(e.target.value)}><option value="">— เลือกสินค้า —</option>{products.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}</select></label><label>กลุ่มเป้าหมาย<textarea rows={3} value={target} onChange={e=>setTarget(e.target.value)}/></label><label>โทนการสื่อสาร<input value={tone} onChange={e=>setTone(e.target.value)}/></label><div className="two"><label>แพลตฟอร์ม<select value={platform} onChange={e=>setPlatform(e.target.value)}><option>TikTok</option><option>Instagram Reels</option><option>YouTube Shorts</option><option>Facebook Reels</option></select></label><label>จำนวนคลิป<input type="number" min="1" max="20" value={count} onChange={e=>setCount(Math.max(1,Math.min(20,Number(e.target.value))))}/></label></div><button className="primary" onClick={buildPrompt}>✦ สร้าง Campaign Prompt</button></section>
+      <section className="panel form"><h2>2. Prompt พร้อมใช้</h2>{prompt?<><textarea className="promptBox" readOnly rows={16} value={prompt}/><div className="actions"><button className="secondary" onClick={copyPrompt}>คัดลอก Prompt</button><button className="primary" onClick={openChat}>เปิด ChatGPT</button></div></>:<Empty text="เลือกสินค้าและกดสร้าง Campaign Prompt"/>}</section>
+    </div>
+    <section className="panel form"><h2>3. Import Campaign Result</h2><p>คัดลอก JSON ที่ ChatGPT ตอบกลับมาวางในช่องนี้</p><textarea rows={10} value={jsonText} onChange={e=>setJsonText(e.target.value)} placeholder='วาง JSON ที่ขึ้นต้นด้วย [ และลงท้ายด้วย ]'/><div className="actions"><button className="secondary" onClick={parse}>ตรวจสอบ JSON</button>{preview.length>0&&<button className="primary" onClick={save}>บันทึก {preview.length} คลิปเข้า Content Queue</button>}</div>{message&&<div className="studioMessage">{message}</div>}{preview.length>0&&<div className="preview">{preview.map((x,i)=><article key={i}><small>CLIP {i+1}</small><b>{x.title}</b><p>{x.hook}</p><span>{x.hashtags.join(" ")}</span></article>)}</div>}</section>
+  </div>;
+}
+
+function Analytics({contents,revenue,views,clicks}:{contents:Content[];revenue:number;views:number;clicks:number}){return <div className="grid2"><div className="panel metric"><small>Revenue per 1,000 views</small><strong>{money(views?revenue/views*1000:0)}</strong></div><div className="panel metric"><small>Clicks</small><strong>{clicks.toLocaleString()}</strong></div><div className="panel full"><h2>Performance</h2>{contents.slice(0,10).map(c=><Row key={c.id} left={c.title} sub={`${c.views} views · ${c.clicks} clicks`} right={money(c.revenue)}/>)}{!contents.length&&<Empty/>}</div></div>}
+function Kpi({label,value}:{label:string;value:string}){return <div className="kpi"><small>{label}</small><strong>{value}</strong></div>}
+function Row({left,sub,right}:{left:string;sub:string;right:string}){return <div className="row"><div><b>{left}</b><small>{sub}</small></div><span className="pill">{right}</span></div>}
+function Empty({text="ยังไม่มีข้อมูล"}:{text?:string}){return <div className="empty">{text}</div>}
+function Modal({title,close,children}:{title:string;close:()=>void;children:React.ReactNode}){return <div className="backdrop" onMouseDown={close}><div className="modal" onMouseDown={e=>e.stopPropagation()}><div className="modalHead"><h2>{title}</h2><button onClick={close}>×</button></div>{children}</div></div>}
