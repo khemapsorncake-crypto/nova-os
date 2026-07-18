@@ -3,12 +3,13 @@
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { hasSupabaseConfig, supabase } from "@/lib/supabase";
 
-type Page = "dashboard" | "products" | "content" | "studio" | "analytics";
+type Page = "dashboard" | "products" | "campaigns" | "content" | "studio" | "analytics";
 type Product = { id:string; name:string; brand:string|null; category:string; price:number; commission:number; affiliate_link:string|null; status:string; revenue:number; created_at:string; };
-type Content = { id:string; title:string; character:string; platform:string; status:string; hook:string|null; script:string|null; caption:string|null; storyboard:unknown; image_prompt:string|null; video_prompt:string|null; views:number; clicks:number; revenue:number; created_at:string; };
+type Campaign = { id:string; name:string; product_id:string|null; platform:string; target_audience:string|null; tone:string|null; status:string; total_clips:number; created_at:string; };
+type Content = { id:string; campaign_id:string|null; title:string; character:string; platform:string; status:string; hook:string|null; script:string|null; caption:string|null; storyboard:unknown; image_prompt:string|null; video_prompt:string|null; views:number; clicks:number; revenue:number; created_at:string; };
 type CampaignItem = { title:string; hook:string; script:string; caption:string; hashtags:string[]; storyboard:Array<{scene:number;visual:string;voiceover:string}>; image_prompt:string; video_prompt:string; };
 
-const VERSION = "v4.0 CONTENT FACTORY";
+const VERSION = "v5.0 CAMPAIGN HUB";
 const statuses = ["Idea","Script","Production","Ready","Posted"];
 const money = (value:number|string|null|undefined) => `฿${Number(value || 0).toLocaleString("th-TH")}`;
 const creatorByCategory = (category:string) => category === "Beauty" ? "LUNA" : category === "Office" ? "MAYA" : category === "Tech" ? "ETHAN" : "ARIA";
@@ -16,6 +17,7 @@ const creatorByCategory = (category:string) => category === "Beauty" ? "LUNA" : 
 export default function NovaApp(){
   const [page,setPage] = useState<Page>("dashboard");
   const [products,setProducts] = useState<Product[]>([]);
+  const [campaigns,setCampaigns] = useState<Campaign[]>([]);
   const [contents,setContents] = useState<Content[]>([]);
   const [loading,setLoading] = useState(true);
   const [notice,setNotice] = useState("");
@@ -24,12 +26,14 @@ export default function NovaApp(){
   const loadData = useCallback(async()=>{
     if(!supabase){ setLoading(false); return; }
     setLoading(true);
-    const [p,c] = await Promise.all([
+    const [p,cp,c] = await Promise.all([
       supabase.from("products").select("*").order("created_at",{ascending:false}),
+      supabase.from("campaigns").select("*").order("created_at",{ascending:false}),
       supabase.from("contents").select("*").order("created_at",{ascending:false})
     ]);
-    if(p.error || c.error) setNotice((p.error || c.error)?.message || "โหลดข้อมูลไม่สำเร็จ");
+    if(p.error || cp.error || c.error) setNotice((p.error || cp.error || c.error)?.message || "โหลดข้อมูลไม่สำเร็จ");
     setProducts((p.data || []) as Product[]);
+    setCampaigns((cp.data || []) as Campaign[]);
     setContents((c.data || []) as Content[]);
     setLoading(false);
   },[]);
@@ -62,7 +66,7 @@ export default function NovaApp(){
       <div className="brand"><span>✦</span><div><b>NOVA OS</b><small>Free Campaign Studio</small></div></div>
       <div className="version">{VERSION}</div>
       <nav>{[
-        ["dashboard","⌂","Dashboard"],["products","▣","Products"],["content","▶","Content"],["studio","✦","Campaign Studio"],["analytics","▥","Analytics"]
+        ["dashboard","⌂","Dashboard"],["products","▣","Products"],["campaigns","◆","Campaigns"],["content","▶","Content"],["studio","✦","Campaign Studio"],["analytics","▥","Analytics"]
       ].map(([id,icon,label])=><button key={id} className={page===id?"active":""} onClick={()=>setPage(id as Page)}><span>{icon}</span>{label}</button>)}</nav>
       <div className={`connection ${hasSupabaseConfig?"online":"offline"}`}>● {hasSupabaseConfig?"Supabase connected":"Environment missing"}</div>
     </aside>
@@ -73,6 +77,7 @@ export default function NovaApp(){
       {loading?<div className="panel empty">กำลังโหลดข้อมูล...</div>:<>
         {page==="dashboard"&&<Dashboard products={products} contents={contents} revenue={revenue} views={views} clicks={clicks}/>} 
         {page==="products"&&<Products products={products} open={()=>setProductModal(true)}/>} 
+        {page==="campaigns"&&<CampaignHub campaigns={campaigns} contents={contents} products={products} refresh={loadData}/>} 
         {page==="content"&&<ContentBoard contents={contents} move={moveContent} refresh={loadData}/>} 
         {page==="studio"&&<CampaignStudio products={products} refresh={loadData}/>} 
         {page==="analytics"&&<Analytics contents={contents} revenue={revenue} views={views} clicks={clicks}/>} 
@@ -95,6 +100,37 @@ function Dashboard({products,contents,revenue,views,clicks}:{products:Product[];
 }
 
 function Products({products,open}:{products:Product[];open:()=>void}){return <div className="panel"><div className="panelTop"><div><h2>Product Center</h2><p>สินค้าทั้งหมดใน Supabase</p></div><button className="primary" onClick={open}>+ เพิ่มสินค้า</button></div><div className="tableWrap"><table><thead><tr><th>สินค้า</th><th>หมวด</th><th>ราคา</th><th>คอมมิชชั่น</th><th>สถานะ</th></tr></thead><tbody>{products.map(p=><tr key={p.id}><td><b>{p.name}</b><small>{p.brand||"—"}</small></td><td>{p.category}</td><td>{money(p.price)}</td><td>{money(p.commission)}</td><td><span className="pill">{p.status}</span></td></tr>)}</tbody></table></div>{!products.length&&<Empty/>}</div>}
+
+function CampaignHub({campaigns,contents,products,refresh}:{campaigns:Campaign[];contents:Content[];products:Product[];refresh:()=>void}){
+  const [selected,setSelected]=useState<Campaign|null>(null);
+  const [query,setQuery]=useState("");
+  const filtered=campaigns.filter(c=>!query||c.name.toLowerCase().includes(query.toLowerCase()));
+  const productName=(id:string|null)=>products.find(p=>p.id===id)?.name||"ไม่ระบุสินค้า";
+  async function remove(campaign:Campaign){
+    if(!supabase||!confirm(`ลบ Campaign “${campaign.name}” และคลิปทั้งหมดหรือไม่?`))return;
+    const {error}=await supabase.from("campaigns").delete().eq("id",campaign.id);
+    if(error)alert(error.message);else{setSelected(null);refresh();}
+  }
+  return <>
+    <div className="factoryToolbar"><div><h2>Campaign Hub</h2><p>รวมหลายคลิปไว้เป็นแคมเปญเดียว พร้อมติดตามความคืบหน้า</p></div><div className="factoryFilters"><input placeholder="ค้นหา Campaign" value={query} onChange={e=>setQuery(e.target.value)}/></div></div>
+    <div className="campaignGrid">{filtered.map(c=>{
+      const clips=contents.filter(x=>x.campaign_id===c.id);
+      const complete=clips.filter(x=>x.status==="Ready"||x.status==="Posted").length;
+      const percent=clips.length?Math.round(complete/clips.length*100):0;
+      return <article className="campaignCard" key={c.id} onClick={()=>setSelected(c)}>
+        <div className="campaignCardTop"><span className="badge">{c.platform}</span><span className="pill">{c.status}</span></div>
+        <h3>{c.name}</h3><p>{productName(c.product_id)}</p>
+        <div className="progressMeta"><span>{clips.length} คลิป</span><b>{percent}%</b></div><div className="progress"><i style={{width:`${percent}%`}}/></div>
+        <div className="campaignStats"><span>Script {clips.filter(x=>x.status==="Script").length}</span><span>Production {clips.filter(x=>x.status==="Production").length}</span><span>Posted {clips.filter(x=>x.status==="Posted").length}</span></div>
+      </article>})}{!filtered.length&&<div className="panel"><Empty text="ยังไม่มี Campaign — สร้างได้จาก Campaign Studio"/></div>}</div>
+    {selected&&<div className="backdrop" onMouseDown={()=>setSelected(null)}><div className="campaignDetail" onMouseDown={e=>e.stopPropagation()}>
+      <div className="editorHead"><div><span className="badge">{selected.platform} · {selected.status}</span><h2>{selected.name}</h2><p>{productName(selected.product_id)}</p></div><button className="closeButton" onClick={()=>setSelected(null)}>×</button></div>
+      <div className="campaignInfo"><div><small>กลุ่มเป้าหมาย</small><p>{selected.target_audience||"—"}</p></div><div><small>โทน</small><p>{selected.tone||"—"}</p></div><div><small>จำนวนที่วางแผน</small><strong>{selected.total_clips} คลิป</strong></div></div>
+      <div className="campaignClipList">{contents.filter(x=>x.campaign_id===selected.id).map((clip,i)=><div className="campaignClip" key={clip.id}><span>{i+1}</span><div><b>{clip.title}</b><small>{clip.character} · {clip.platform}</small><p>{clip.hook||"ยังไม่มี Hook"}</p></div><span className="pill">{clip.status}</span></div>)}{!contents.some(x=>x.campaign_id===selected.id)&&<Empty text="ยังไม่มีคลิปใน Campaign นี้"/>}</div>
+      <div className="editorActions"><button className="dangerButton" onClick={()=>remove(selected)}>ลบ Campaign</button><button className="primary" onClick={()=>setSelected(null)}>ปิด</button></div>
+    </div></div>}
+  </>;
+}
 
 function ContentBoard({contents,move,refresh}:{contents:Content[];move:(id:string,status:string)=>void;refresh:()=>void}){
   const [selected,setSelected]=useState<Content|null>(null);
@@ -187,10 +223,15 @@ function CampaignStudio({products,refresh}:{products:Product[];refresh:()=>void}
   }
   async function save(){
     if(!supabase||!product||!preview.length)return;
-    const rows=preview.map(x=>({product_id:product.id,title:x.title,character:creatorByCategory(product.category),platform,status:"Script",hook:x.hook,script:x.script,caption:`${x.caption||""}\n\n${x.hashtags.join(" ")}`.trim(),storyboard:x.storyboard,image_prompt:x.image_prompt||null,video_prompt:x.video_prompt||null}));
+    const campaignName=`${product.name} · ${platform} · ${new Date().toLocaleDateString("th-TH")}`;
+    const {data:campaign,error:campaignError}=await supabase.from("campaigns").insert({
+      name:campaignName,product_id:product.id,platform,target_audience:target,tone,status:"Active",total_clips:preview.length
+    }).select("id").single();
+    if(campaignError||!campaign){setMessage(campaignError?.message||"สร้าง Campaign ไม่สำเร็จ");return;}
+    const rows=preview.map(x=>({campaign_id:campaign.id,product_id:product.id,title:x.title,character:creatorByCategory(product.category),platform,status:"Script",hook:x.hook,script:x.script,caption:`${x.caption||""}\n\n${x.hashtags.join(" ")}`.trim(),storyboard:x.storyboard,image_prompt:x.image_prompt||null,video_prompt:x.video_prompt||null}));
     const {error}=await supabase.from("contents").insert(rows);
-    if(error){setMessage(error.message);return;}
-    setMessage(`บันทึก ${rows.length} คลิปเข้า Content Queue แล้ว`); setPreview([]); setJsonText(""); refresh();
+    if(error){await supabase.from("campaigns").delete().eq("id",campaign.id);setMessage(error.message);return;}
+    setMessage(`สร้าง Campaign และบันทึก ${rows.length} คลิปแล้ว`); setPreview([]); setJsonText(""); refresh();
   }
 
   return <div className="studio">
