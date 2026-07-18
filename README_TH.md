@@ -1,21 +1,28 @@
-# NOVA OS v2
+# NOVA OS v3 — Free Campaign Studio
 
-## 1) อัปเดตฐานข้อมูล
-Supabase → SQL Editor → เปิด `supabase_schema_v2.sql` → คัดลอกทั้งหมด → Run
+เวอร์ชันนี้ไม่ต้องใช้ OpenAI API และไม่มีค่า AI เพิ่ม
 
-## 2) อัปโหลดเข้า GitHub
-อัปโหลดไฟล์และโฟลเดอร์ทั้งหมดใน ZIP นี้เข้า repository `nova-os` แทนไฟล์ HTML เดิม
+## 1. อัปเดต Supabase
+เข้า Supabase → SQL Editor → New query แล้วเปิดไฟล์ `supabase_schema_v3.sql` คัดลอกทั้งหมดไป Run
 
-## 3) ตั้งค่า Vercel Environment Variables
+## 2. อัปโหลดขึ้น GitHub
+แตก ZIP แล้วอัปโหลดไฟล์ทั้งหมดทับ repository เดิม `nova-os`
+Commit message: `Add NOVA Free Campaign Studio v3`
+Vercel จะ Deploy อัตโนมัติ
+
+## 3. วิธีใช้งาน
+1. เพิ่มสินค้าใน Products
+2. เข้า AI Studio
+3. เลือกสินค้า กลุ่มเป้าหมาย โทน แพลตฟอร์ม และจำนวนคลิป
+4. กด “สร้าง Campaign Prompt”
+5. กด “เปิด ChatGPT”
+6. วาง Prompt ใน ChatGPT
+7. คัดลอก JSON ที่ได้กลับมาใส่ Import Campaign Result
+8. กด “ตรวจสอบ JSON”
+9. กดบันทึกเข้า Content Queue
+
+Environment Variables ใช้เหมือนเดิม:
 - NEXT_PUBLIC_SUPABASE_URL
 - NEXT_PUBLIC_SUPABASE_ANON_KEY
-- OPENAI_API_KEY (ข้ามก่อนได้)
-- OPENAI_MODEL = gpt-5-mini
 
-ใช้ Publishable key เท่านั้น ห้ามใช้ Secret หรือ service_role key
-
-## 4) Redeploy
-Vercel → Deployments → เมนูจุดสามจุดของ Deployment ล่าสุด → Redeploy
-
-ระบบมี Dashboard, Product Center, Content Kanban, AI Script Generator และ Analytics
-หากยังไม่ใส่ OPENAI_API_KEY ปุ่ม AI จะใช้ Template สำรองและยังทำงานได้
+ไม่ต้องมี OPENAI_API_KEY
