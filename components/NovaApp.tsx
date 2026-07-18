@@ -9,7 +9,7 @@ type Campaign = { id:string; name:string; product_id:string|null; platform:strin
 type Content = { id:string; campaign_id:string|null; title:string; character:string; platform:string; status:string; hook:string|null; script:string|null; caption:string|null; storyboard:unknown; image_prompt:string|null; video_prompt:string|null; views:number; clicks:number; revenue:number; created_at:string; };
 type CampaignItem = { title:string; hook:string; script:string; caption:string; hashtags:string[]; storyboard:Array<{scene:number;visual:string;voiceover:string}>; image_prompt:string; video_prompt:string; };
 
-const VERSION = "v5.0 CAMPAIGN HUB";
+const VERSION = "v5.1 CAMPAIGN DETAIL";
 const statuses = ["Idea","Script","Production","Ready","Posted"];
 const money = (value:number|string|null|undefined) => `฿${Number(value || 0).toLocaleString("th-TH")}`;
 const creatorByCategory = (category:string) => category === "Beauty" ? "LUNA" : category === "Office" ? "MAYA" : category === "Tech" ? "ETHAN" : "ARIA";
@@ -103,13 +103,23 @@ function Products({products,open}:{products:Product[];open:()=>void}){return <di
 
 function CampaignHub({campaigns,contents,products,refresh}:{campaigns:Campaign[];contents:Content[];products:Product[];refresh:()=>void}){
   const [selected,setSelected]=useState<Campaign|null>(null);
+  const [selectedClip,setSelectedClip]=useState<Content|null>(null);
   const [query,setQuery]=useState("");
   const filtered=campaigns.filter(c=>!query||c.name.toLowerCase().includes(query.toLowerCase()));
   const productName=(id:string|null)=>products.find(p=>p.id===id)?.name||"ไม่ระบุสินค้า";
+  const campaignClips=selected?contents.filter(x=>x.campaign_id===selected.id):[];
+  const completed=campaignClips.filter(x=>x.status==="Ready"||x.status==="Posted").length;
+  const progressPercent=campaignClips.length?Math.round(completed/campaignClips.length*100):0;
+
   async function remove(campaign:Campaign){
     if(!supabase||!confirm(`ลบ Campaign “${campaign.name}” และคลิปทั้งหมดหรือไม่?`))return;
     const {error}=await supabase.from("campaigns").delete().eq("id",campaign.id);
     if(error)alert(error.message);else{setSelected(null);refresh();}
+  }
+  async function updateClipStatus(id:string,status:string){
+    if(!supabase)return;
+    const {error}=await supabase.from("contents").update({status}).eq("id",id);
+    if(error)alert(error.message);else await refresh();
   }
   return <>
     <div className="factoryToolbar"><div><h2>Campaign Hub</h2><p>รวมหลายคลิปไว้เป็นแคมเปญเดียว พร้อมติดตามความคืบหน้า</p></div><div className="factoryFilters"><input placeholder="ค้นหา Campaign" value={query} onChange={e=>setQuery(e.target.value)}/></div></div>
@@ -125,10 +135,13 @@ function CampaignHub({campaigns,contents,products,refresh}:{campaigns:Campaign[]
       </article>})}{!filtered.length&&<div className="panel"><Empty text="ยังไม่มี Campaign — สร้างได้จาก Campaign Studio"/></div>}</div>
     {selected&&<div className="backdrop" onMouseDown={()=>setSelected(null)}><div className="campaignDetail" onMouseDown={e=>e.stopPropagation()}>
       <div className="editorHead"><div><span className="badge">{selected.platform} · {selected.status}</span><h2>{selected.name}</h2><p>{productName(selected.product_id)}</p></div><button className="closeButton" onClick={()=>setSelected(null)}>×</button></div>
+      <div className="campaignProgressHero"><div><small>ความคืบหน้า Campaign</small><strong>{progressPercent}%</strong><span>{completed} จาก {campaignClips.length} คลิปพร้อมใช้งานหรือโพสต์แล้ว</span></div><div className="progress large"><i style={{width:`${progressPercent}%`}}/></div></div>
       <div className="campaignInfo"><div><small>กลุ่มเป้าหมาย</small><p>{selected.target_audience||"—"}</p></div><div><small>โทน</small><p>{selected.tone||"—"}</p></div><div><small>จำนวนที่วางแผน</small><strong>{selected.total_clips} คลิป</strong></div></div>
-      <div className="campaignClipList">{contents.filter(x=>x.campaign_id===selected.id).map((clip,i)=><div className="campaignClip" key={clip.id}><span>{i+1}</span><div><b>{clip.title}</b><small>{clip.character} · {clip.platform}</small><p>{clip.hook||"ยังไม่มี Hook"}</p></div><span className="pill">{clip.status}</span></div>)}{!contents.some(x=>x.campaign_id===selected.id)&&<Empty text="ยังไม่มีคลิปใน Campaign นี้"/>}</div>
+      <div className="campaignSummary">{statuses.map(status=><div key={status}><small>{status}</small><b>{campaignClips.filter(x=>x.status===status).length}</b></div>)}</div>
+      <div className="campaignClipList">{campaignClips.map((clip,i)=><div className="campaignClip clickable" key={clip.id} onClick={()=>setSelectedClip(clip)}><span>{i+1}</span><div><b>{clip.title}</b><small>{clip.character} · {clip.platform}</small><p>{clip.hook||"ยังไม่มี Hook"}</p></div><div className="clipActions" onClick={e=>e.stopPropagation()}><select value={clip.status} onChange={e=>updateClipStatus(clip.id,e.target.value)}>{statuses.map(x=><option key={x}>{x}</option>)}</select><button className="secondary compact" onClick={()=>setSelectedClip(clip)}>เปิดรายละเอียด</button></div></div>)}{!campaignClips.length&&<Empty text="ยังไม่มีคลิปใน Campaign นี้"/>}</div>
       <div className="editorActions"><button className="dangerButton" onClick={()=>remove(selected)}>ลบ Campaign</button><button className="primary" onClick={()=>setSelected(null)}>ปิด</button></div>
     </div></div>}
+    {selectedClip&&<ContentEditor content={selectedClip} close={()=>setSelectedClip(null)} refresh={async()=>{await refresh();setSelectedClip(null);}}/>}
   </>;
 }
 
